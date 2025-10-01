@@ -100,7 +100,7 @@ export const instanceController = new InstanceController(
   baileysCache,
   providerFiles,
 );
-export const sendMessageController = new SendMessageController(waMonitor);
+export const sendMessageController = new SendMessageController(waMonitor, cache);
 export const callController = new CallController(waMonitor);
 export const chatController = new ChatController(waMonitor);
 export const businessController = new BusinessController(waMonitor);
@@ -137,5 +137,10 @@ export const n8nController = new N8nController(n8nService, prismaRepository, waM
 
 const evoaiService = new EvoaiService(waMonitor, prismaRepository, configService, openaiService);
 export const evoaiController = new EvoaiController(evoaiService, prismaRepository, waMonitor);
+
+// External Webhook
+import { ExternalWebhookController } from './controllers/external-webhook.controller';
+
+export const externalWebhookController = new ExternalWebhookController(prismaRepository);
 
 logger.info('Module - ON');

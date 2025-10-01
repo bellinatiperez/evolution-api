@@ -15,7 +15,9 @@ import {
   SendTextDto,
 } from '@api/dto/sendMessage.dto';
 import { WAMonitoringService } from '@api/services/monitor.service';
-import { BadRequestException } from '@exceptions';
+import { CacheService } from '@api/services/cache.service';
+import { BadRequestException, InternalServerErrorException } from '@exceptions';
+import { Logger } from '@config/logger.config';
 import { isBase64, isURL } from 'class-validator';
 import emojiRegex from 'emoji-regex';
 
@@ -29,7 +31,16 @@ function isEmoji(str: string) {
 }
 
 export class SendMessageController {
-  constructor(private readonly waMonitor: WAMonitoringService) {}
+  private readonly logger = new Logger('SendMessageController');
+  
+  // Configurações de cache para rotação de instâncias
+  private readonly CACHE_KEY_PREFIX = 'instance_rotation';
+  private readonly CACHE_TTL = 24 * 60 * 60; // 24 horas em segundos
+
+  constructor(
+    private readonly waMonitor: WAMonitoringService,
+    private readonly cache: CacheService,
+  ) {}
 
   public async sendTemplate({ instanceName }: InstanceDto, data: SendTemplateDto) {
     return await this.waMonitor.waInstances[instanceName].templateMessage(data);
@@ -103,5 +114,217 @@ export class SendMessageController {
 
   public async sendStatus({ instanceName }: InstanceDto, data: SendStatusDto, file?: any) {
     return await this.waMonitor.waInstances[instanceName].statusMessage(data, file);
+  }
+
+  /**
+   * Envia mensagem de texto com balanceamento automático de instâncias
+   */
+  public async sendTextWithBalancing(data: SendTextDto) {
+    try {
+      this.logger.info(`Iniciando envio com balanceamento para contato: ${JSON.stringify(data.number)}`);
+      
+      // Obter instâncias disponíveis
+      const availableInstances = this.getAvailableInstances();
+      
+      if (availableInstances.length === 0) {
+        throw new InternalServerErrorException('Nenhuma instância disponível para envio');
+      }
+
+      // Selecionar instância usando algoritmo de balanceamento
+      const selectedInstance = await this.selectInstanceForContact(data.number, availableInstances);
+      
+      this.logger.info(`Instância selecionada: ${selectedInstance} para contato: ${JSON.stringify(data.number)}`);
+
+      // Enviar mensagem usando a instância selecionada
+      const result = await this.waMonitor.waInstances[selectedInstance].textMessage(data);
+      
+      this.logger.info(`Mensagem enviada com sucesso via instância: ${selectedInstance}`);
+      
+      return {
+        ...result,
+        instanceUsed: selectedInstance,
+        balancingInfo: await this.getContactBalancingInfo(data.number)
+      };
+      
+    } catch (error) {
+      this.logger.error(`Erro no envio com balanceamento: ${JSON.stringify(error.message)}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Obtém lista de instâncias disponíveis (conectadas)
+   */
+  private getAvailableInstances(): string[] {
+    const allInstances = Object.keys(this.waMonitor.waInstances);
+    return allInstances.filter(instanceName => {
+      const instance = this.waMonitor.waInstances[instanceName];
+      return instance && instance.connectionStatus?.state === 'open';
+    });
+  }
+
+  /**
+   * Seleciona instância para contato usando algoritmo de rotação
+   */
+  private async selectInstanceForContact(contactNumber: string, availableInstances: string[]): Promise<string> {
+    const normalizedContact = this.normalizeContactNumber(contactNumber);
+    
+    // Ordenar instâncias para garantir ordem consistente
+    const sortedInstances = [...availableInstances].sort();
+    
+    // Obter ou criar informações de rotação para o contato
+    let rotationInfo = await this.getRotationDataFromCache(normalizedContact);
+    
+    if (!rotationInfo) {
+      rotationInfo = {
+        usedInstances: new Set(),
+        lastUsedInstance: null,
+        rotationCount: 0
+      };
+    }
+    
+    // Se todas as instâncias foram usadas, resetar o ciclo
+    if (rotationInfo.usedInstances.size >= sortedInstances.length) {
+      this.logger.info(`Resetando ciclo de rotação para contato: ${normalizedContact}`);
+      rotationInfo.usedInstances.clear();
+      rotationInfo.rotationCount++;
+    }
+
+    let selectedInstance: string;
+    
+    // Usar algoritmo round-robin determinístico
+    if (rotationInfo.lastUsedInstance) {
+      // Encontrar a próxima instância na sequência ordenada
+      const lastIndex = sortedInstances.indexOf(rotationInfo.lastUsedInstance);
+      let nextIndex = (lastIndex + 1) % sortedInstances.length;
+      
+      // Procurar a próxima instância não utilizada neste ciclo
+      let attempts = 0;
+      while (attempts < sortedInstances.length) {
+        const candidateInstance = sortedInstances[nextIndex];
+        
+        if (!rotationInfo.usedInstances.has(candidateInstance)) {
+          selectedInstance = candidateInstance;
+          break;
+        }
+        
+        nextIndex = (nextIndex + 1) % sortedInstances.length;
+        attempts++;
+      }
+      
+      // Se todas foram usadas (não deveria acontecer devido ao reset acima), usar a próxima na sequência
+      if (!selectedInstance) {
+        selectedInstance = sortedInstances[nextIndex];
+      }
+    } else {
+      // Primeira seleção para este contato - usar a primeira instância disponível
+      selectedInstance = sortedInstances[0];
+    }
+
+    // Atualizar informações de rotação
+    rotationInfo.usedInstances.add(selectedInstance);
+    rotationInfo.lastUsedInstance = selectedInstance;
+
+    // Salvar no cache
+    await this.saveRotationDataToCache(normalizedContact, rotationInfo);
+
+    this.logger.info(`Seleção de instância - Contato: ${normalizedContact}, Instância: ${selectedInstance}, Ciclo: ${rotationInfo.rotationCount}, Usadas: ${rotationInfo.usedInstances.size}/${sortedInstances.length}`);
+
+    return selectedInstance;
+  }
+
+  /**
+   * Normaliza número de contato removendo caracteres especiais
+   */
+  private normalizeContactNumber(contactNumber: string): string {
+    return contactNumber.replace(/[^\d]/g, '');
+  }
+
+  /**
+   * Obtém informações de balanceamento para um contato
+   */
+  private async getContactBalancingInfo(contactNumber: string) {
+    const normalizedContact = this.normalizeContactNumber(contactNumber);
+    const rotationInfo = await this.getRotationDataFromCache(normalizedContact);
+    
+    if (!rotationInfo) {
+      return {
+        rotationCount: 0,
+        usedInstancesInCycle: 0,
+        lastUsedInstance: null
+      };
+    }
+
+    return {
+      rotationCount: rotationInfo.rotationCount,
+      usedInstancesInCycle: rotationInfo.usedInstances.size,
+      lastUsedInstance: rotationInfo.lastUsedInstance
+    };
+  }
+
+  /**
+   * Salva dados de rotação no cache
+   */
+  private async saveRotationDataToCache(contactNumber: string, data: {
+    usedInstances: Set<string>;
+    lastUsedInstance: string | null;
+    rotationCount: number;
+  }): Promise<void> {
+    try {
+      const cacheKey = `${this.CACHE_KEY_PREFIX}:${contactNumber}`;
+      const cacheData = {
+        usedInstances: Array.from(data.usedInstances),
+        lastUsedInstance: data.lastUsedInstance,
+        rotationCount: data.rotationCount,
+        lastUpdated: new Date().toISOString(),
+      };
+      
+      await this.cache.set(cacheKey, cacheData, this.CACHE_TTL);
+    } catch (error) {
+      this.logger.error(`Erro ao salvar dados de rotação no cache: ${error}`);
+      // Em caso de erro, os dados são perdidos mas o sistema continua funcionando
+      // pois cada contato será tratado como novo na próxima chamada
+    }
+  }
+
+  /**
+   * Recupera dados de rotação do cache
+   */
+  private async getRotationDataFromCache(contactNumber: string): Promise<{
+    usedInstances: Set<string>;
+    lastUsedInstance: string | null;
+    rotationCount: number;
+  } | null> {
+    try {
+      const cacheKey = `${this.CACHE_KEY_PREFIX}:${contactNumber}`;
+      const cacheData = await this.cache.get(cacheKey);
+      
+      if (cacheData) {
+        return {
+          usedInstances: new Set(cacheData.usedInstances || []),
+          lastUsedInstance: cacheData.lastUsedInstance || null,
+          rotationCount: cacheData.rotationCount || 0,
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.error(`Erro ao recuperar dados de rotação do cache: ${error}`);
+      // Em caso de erro, retorna null para que o contato seja tratado como novo
+      return null;
+    }
+  }
+
+  /**
+   * Remove dados de rotação do cache
+   */
+  private async removeRotationDataFromCache(contactNumber: string): Promise<void> {
+    try {
+      const cacheKey = `${this.CACHE_KEY_PREFIX}:${contactNumber}`;
+      await this.cache.delete(cacheKey);
+    } catch (error) {
+      this.logger.error(`Erro ao remover dados de rotação do cache: ${error}`);
+      // Em caso de erro, os dados permanecerão no cache até expirarem pelo TTL
+    }
   }
 }

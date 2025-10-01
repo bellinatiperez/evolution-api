@@ -61,6 +61,31 @@ export class MessageRouter extends RouterBroker {
 
         return res.status(HttpStatus.CREATED).json(response);
       })
+      .post(this.routerPath('sendTextWithBalancing', false), async (req, res) => {
+        // Validação manual sem instanceName e sem guards
+        const data = new SendTextDto();
+        Object.assign(data, req.body);
+        
+        // Validação do schema
+        const { validate } = require('jsonschema');
+        const v = validate(data, textMessageSchema);
+        
+        if (!v.valid) {
+          const message: any[] = v.errors.map(({ stack, schema }) => {
+            let message: string;
+            if (schema['description']) {
+              message = schema['description'];
+            } else {
+              message = stack.replace('instance.', '');
+            }
+            return message;
+          });
+          return res.status(400).json({ status: 400, error: 'Bad Request', response: { message } });
+        }
+
+        const response = await sendMessageController.sendTextWithBalancing(data);
+        return res.status(HttpStatus.CREATED).json(response);
+      })
       .post(this.routerPath('sendMedia'), ...guards, upload.single('file'), async (req, res) => {
         const bodyData = req.body;
 

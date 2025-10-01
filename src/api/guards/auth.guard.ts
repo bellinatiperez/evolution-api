@@ -16,11 +16,18 @@ async function apikey(req: Request, _: Response, next: NextFunction) {
     throw new UnauthorizedException();
   }
 
+  // Permitir acesso direto para external-webhook com chave global
+  if (req.originalUrl.includes('/external-webhook') && env.KEY === key) {
+    return next();
+  }
+
   if (env.KEY === key) {
     return next();
   }
 
-  if ((req.originalUrl.includes('/instance/create') || req.originalUrl.includes('/instance/fetchInstances')) && !key) {
+  if ((req.originalUrl.includes('/instance/create') || 
+       req.originalUrl.includes('/instance/fetchInstances') ||
+       req.originalUrl.includes('/external-webhook')) && !key) {
     throw new ForbiddenException('Missing global api key', 'The global api key must be set');
   }
   const param = req.params as unknown as InstanceDto;

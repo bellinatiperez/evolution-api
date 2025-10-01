@@ -1,0 +1,190 @@
+version: "3.8"
+
+services:
+  evolution-api:
+    container_name: evolution_api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - evolution-redis
+      - evolution-postgres
+    ports:
+      - "8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+    networks:
+      - evolution-net
+    env_file:
+      - .env.docker
+    environment:
+      - DOCKER_ENV=true
+      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution123@evolution-postgres:5432/evolution_db?schema=evolution_api
+      - CACHE_REDIS_URI=redis://evolution-redis:6379/6
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  evolution-redis:
+    container_name: evolution_redis
+    image: redis:7-alpine
+    restart: always
+    command: >
+      redis-server 
+      --port 6379 
+      --appendonly yes 
+      --maxmemory 512mb 
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - evolution_redis:/data
+    networks:
+      - evolution-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  evolution-postgres:
+    container_name: evolution_postgres
+    image: postgres:15-alpine
+    restart: always
+    command:
+      - postgres
+      - -c
+      - max_connections=1000
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - listen_addresses=*
+    environment:
+      - POSTGRES_DB=evolution_db
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=evolution123
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - evolution_postgres:/var/lib/postgresql/data
+      - ./Docker/postgres-init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - evolution-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Nginx reverse proxy for SSL termination and load balancing
+  evolution-nginx:
+    container_name: evolution_nginx
+    image: nginx:alpine
+    restart: always
+    depends_on:
+      - evolution-api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - evolution_nginx_logs:/var/log/nginx
+    networks:
+      - evolution-net
+    profiles:
+      - nginx
+
+  # Optional: Prometheus for monitoring
+  evolution-prometheus:
+    container_name: evolution_prometheus
+    image: prom/prometheus:latest
+    restart: always
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - evolution_prometheus:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - evolution-net
+    profiles:
+      - monitoring
+
+  # Optional: Grafana for visualization
+  evolution-grafana:
+    container_name: evolution_grafana
+    image: grafana/grafana:latest
+    restart: always
+    depends_on:
+      - evolution-prometheus
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=grafana123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - evolution_grafana:/var/lib/grafana
+      - ./grafana-dashboard.json:/etc/grafana/provisioning/dashboards/evolution-dashboard.json:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - evolution-net
+    profiles:
+      - monitoring
+
+  # Optional: RabbitMQ for message queuing
+  evolution-rabbitmq:
+    container_name: evolution_rabbitmq
+    image: rabbitmq:3-management-alpine
+    restart: always
+    environment:
+      - RABBITMQ_DEFAULT_USER=evolution
+      - RABBITMQ_DEFAULT_PASS=rabbitmq123
+      - RABBITMQ_DEFAULT_VHOST=evolution
+    volumes:
+      - evolution_rabbitmq:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - evolution-net
+    profiles:
+      - rabbitmq
+
+volumes:
+  evolution_instances:
+    driver: local
+  evolution_store:
+    driver: local
+  evolution_redis:
+    driver: local
+  evolution_postgres:
+    driver: local
+  evolution_nginx_logs:
+    driver: local
+  evolution_prometheus:
+    driver: local
+  evolution_grafana:
+    driver: local
+  evolution_rabbitmq:
+    driver: local
+
+networks:
+  evolution-net:
+    name: evolution-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

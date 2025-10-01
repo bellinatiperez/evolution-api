@@ -5,7 +5,9 @@ import { SqsController } from '@api/integrations/event/sqs/sqs.controller';
 import { WebhookController } from '@api/integrations/event/webhook/webhook.controller';
 import { WebsocketController } from '@api/integrations/event/websocket/websocket.controller';
 import { PrismaRepository } from '@api/repository/repository.service';
+import { ExternalWebhookService } from '@api/services/external-webhook.service';
 import { WAMonitoringService } from '@api/services/monitor.service';
+import { Logger } from '@config/logger.config';
 import { Server } from 'http';
 
 export class EventManager {
@@ -17,6 +19,8 @@ export class EventManager {
   private natsController: NatsController;
   private sqsController: SqsController;
   private pusherController: PusherController;
+  private externalWebhookService: ExternalWebhookService;
+  private readonly logger = new Logger('EventManager');
 
   constructor(prismaRepository: PrismaRepository, waMonitor: WAMonitoringService) {
     this.prisma = prismaRepository;
@@ -28,6 +32,7 @@ export class EventManager {
     this.nats = new NatsController(prismaRepository, waMonitor);
     this.sqs = new SqsController(prismaRepository, waMonitor);
     this.pusher = new PusherController(prismaRepository, waMonitor);
+    this.externalWebhookService = new ExternalWebhookService(prismaRepository);
   }
 
   public set prisma(prisma: PrismaRepository) {
@@ -119,6 +124,15 @@ export class EventManager {
     await this.sqs.emit(eventData);
     await this.webhook.emit(eventData);
     await this.pusher.emit(eventData);
+    
+    this.logger.info(`Evento emitido: ${JSON.stringify(eventData)}`);
+
+    // Enviar para webhooks externos
+    await this.externalWebhookService.sendToAllWebhooks(
+      eventData.event,
+      eventData.data,
+      eventData.instanceName
+    );
   }
 
   public async setInstance(instanceName: string, data: any): Promise<any> {
