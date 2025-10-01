@@ -25,9 +25,12 @@ async function apikey(req: Request, _: Response, next: NextFunction) {
     return next();
   }
 
-  if ((req.originalUrl.includes('/instance/create') || 
-       req.originalUrl.includes('/instance/fetchInstances') ||
-       req.originalUrl.includes('/external-webhook')) && !key) {
+  if (
+    (req.originalUrl.includes('/instance/create') ||
+      req.originalUrl.includes('/instance/fetchInstances') ||
+      req.originalUrl.includes('/external-webhook')) &&
+    !key
+  ) {
     throw new ForbiddenException('Missing global api key', 'The global api key must be set');
   }
   const param = req.params as unknown as InstanceDto;

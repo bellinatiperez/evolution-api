@@ -1,12 +1,7 @@
 import { RouterBroker } from '@api/abstract/abstract.router';
-import { InstanceDto } from '@api/dto/instance.dto';
 import { ExternalWebhookDto, ExternalWebhookUpdateDto } from '@api/dto/external-webhook.dto';
 import { externalWebhookController } from '@api/server.module';
-import { 
-  externalWebhookSchema, 
-  externalWebhookUpdateSchema, 
-  instanceSchema 
-} from '@validate/validate.schema';
+import { externalWebhookSchema, externalWebhookUpdateSchema } from '@validate/validate.schema';
 import { RequestHandler, Router } from 'express';
 
 import { HttpStatus } from './index.router';
@@ -20,7 +15,7 @@ export class ExternalWebhookRouter extends RouterBroker {
           request: req,
           schema: externalWebhookSchema,
           ClassRef: ExternalWebhookDto,
-          execute: (instance, data) => externalWebhookController.create(data),
+          execute: (_, data) => externalWebhookController.create(data),
         });
 
         res.status(HttpStatus.CREATED).json(response);
@@ -38,7 +33,7 @@ export class ExternalWebhookRouter extends RouterBroker {
           request: req,
           schema: externalWebhookUpdateSchema,
           ClassRef: ExternalWebhookUpdateDto,
-          execute: (instance, data) => externalWebhookController.update(req.params.id, data),
+          execute: (_, data) => externalWebhookController.update(req.params.id, data),
         });
 
         res.status(HttpStatus.OK).json(response);

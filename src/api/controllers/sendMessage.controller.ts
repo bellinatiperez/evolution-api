@@ -14,10 +14,10 @@ import {
   SendTemplateDto,
   SendTextDto,
 } from '@api/dto/sendMessage.dto';
-import { WAMonitoringService } from '@api/services/monitor.service';
 import { CacheService } from '@api/services/cache.service';
-import { BadRequestException, InternalServerErrorException } from '@exceptions';
+import { WAMonitoringService } from '@api/services/monitor.service';
 import { Logger } from '@config/logger.config';
+import { BadRequestException, InternalServerErrorException } from '@exceptions';
 import { isBase64, isURL } from 'class-validator';
 import emojiRegex from 'emoji-regex';
 
@@ -32,7 +32,7 @@ function isEmoji(str: string) {
 
 export class SendMessageController {
   private readonly logger = new Logger('SendMessageController');
-  
+
   // Configurações de cache para rotação de instâncias
   private readonly CACHE_KEY_PREFIX = 'instance_rotation';
   private readonly CACHE_TTL = 24 * 60 * 60; // 24 horas em segundos
@@ -122,30 +122,29 @@ export class SendMessageController {
   public async sendTextWithBalancing(data: SendTextDto) {
     try {
       this.logger.info(`Iniciando envio com balanceamento para contato: ${JSON.stringify(data.number)}`);
-      
+
       // Obter instâncias disponíveis
       const availableInstances = this.getAvailableInstances();
-      
+
       if (availableInstances.length === 0) {
         throw new InternalServerErrorException('Nenhuma instância disponível para envio');
       }
 
       // Selecionar instância usando algoritmo de balanceamento
       const selectedInstance = await this.selectInstanceForContact(data.number, availableInstances);
-      
+
       this.logger.info(`Instância selecionada: ${selectedInstance} para contato: ${JSON.stringify(data.number)}`);
 
       // Enviar mensagem usando a instância selecionada
       const result = await this.waMonitor.waInstances[selectedInstance].textMessage(data);
-      
+
       this.logger.info(`Mensagem enviada com sucesso via instância: ${selectedInstance}`);
-      
+
       return {
         ...result,
         instanceUsed: selectedInstance,
-        balancingInfo: await this.getContactBalancingInfo(data.number)
+        balancingInfo: await this.getContactBalancingInfo(data.number),
       };
-      
     } catch (error) {
       this.logger.error(`Erro no envio com balanceamento: ${JSON.stringify(error.message)}`);
       throw error;
@@ -157,7 +156,7 @@ export class SendMessageController {
    */
   private getAvailableInstances(): string[] {
     const allInstances = Object.keys(this.waMonitor.waInstances);
-    return allInstances.filter(instanceName => {
+    return allInstances.filter((instanceName) => {
       const instance = this.waMonitor.waInstances[instanceName];
       return instance && instance.connectionStatus?.state === 'open';
     });
@@ -168,21 +167,21 @@ export class SendMessageController {
    */
   private async selectInstanceForContact(contactNumber: string, availableInstances: string[]): Promise<string> {
     const normalizedContact = this.normalizeContactNumber(contactNumber);
-    
+
     // Ordenar instâncias para garantir ordem consistente
     const sortedInstances = [...availableInstances].sort();
-    
+
     // Obter ou criar informações de rotação para o contato
     let rotationInfo = await this.getRotationDataFromCache(normalizedContact);
-    
+
     if (!rotationInfo) {
       rotationInfo = {
         usedInstances: new Set(),
         lastUsedInstance: null,
-        rotationCount: 0
+        rotationCount: 0,
       };
     }
-    
+
     // Se todas as instâncias foram usadas, resetar o ciclo
     if (rotationInfo.usedInstances.size >= sortedInstances.length) {
       this.logger.info(`Resetando ciclo de rotação para contato: ${normalizedContact}`);
@@ -191,27 +190,27 @@ export class SendMessageController {
     }
 
     let selectedInstance: string;
-    
+
     // Usar algoritmo round-robin determinístico
     if (rotationInfo.lastUsedInstance) {
       // Encontrar a próxima instância na sequência ordenada
       const lastIndex = sortedInstances.indexOf(rotationInfo.lastUsedInstance);
       let nextIndex = (lastIndex + 1) % sortedInstances.length;
-      
+
       // Procurar a próxima instância não utilizada neste ciclo
       let attempts = 0;
       while (attempts < sortedInstances.length) {
         const candidateInstance = sortedInstances[nextIndex];
-        
+
         if (!rotationInfo.usedInstances.has(candidateInstance)) {
           selectedInstance = candidateInstance;
           break;
         }
-        
+
         nextIndex = (nextIndex + 1) % sortedInstances.length;
         attempts++;
       }
-      
+
       // Se todas foram usadas (não deveria acontecer devido ao reset acima), usar a próxima na sequência
       if (!selectedInstance) {
         selectedInstance = sortedInstances[nextIndex];
@@ -228,7 +227,9 @@ export class SendMessageController {
     // Salvar no cache
     await this.saveRotationDataToCache(normalizedContact, rotationInfo);
 
-    this.logger.info(`Seleção de instância - Contato: ${normalizedContact}, Instância: ${selectedInstance}, Ciclo: ${rotationInfo.rotationCount}, Usadas: ${rotationInfo.usedInstances.size}/${sortedInstances.length}`);
+    this.logger.info(
+      `Seleção de instância - Contato: ${normalizedContact}, Instância: ${selectedInstance}, Ciclo: ${rotationInfo.rotationCount}, Usadas: ${rotationInfo.usedInstances.size}/${sortedInstances.length}`,
+    );
 
     return selectedInstance;
   }
@@ -246,30 +247,33 @@ export class SendMessageController {
   private async getContactBalancingInfo(contactNumber: string) {
     const normalizedContact = this.normalizeContactNumber(contactNumber);
     const rotationInfo = await this.getRotationDataFromCache(normalizedContact);
-    
+
     if (!rotationInfo) {
       return {
         rotationCount: 0,
         usedInstancesInCycle: 0,
-        lastUsedInstance: null
+        lastUsedInstance: null,
       };
     }
 
     return {
       rotationCount: rotationInfo.rotationCount,
       usedInstancesInCycle: rotationInfo.usedInstances.size,
-      lastUsedInstance: rotationInfo.lastUsedInstance
+      lastUsedInstance: rotationInfo.lastUsedInstance,
     };
   }
 
   /**
    * Salva dados de rotação no cache
    */
-  private async saveRotationDataToCache(contactNumber: string, data: {
-    usedInstances: Set<string>;
-    lastUsedInstance: string | null;
-    rotationCount: number;
-  }): Promise<void> {
+  private async saveRotationDataToCache(
+    contactNumber: string,
+    data: {
+      usedInstances: Set<string>;
+      lastUsedInstance: string | null;
+      rotationCount: number;
+    },
+  ): Promise<void> {
     try {
       const cacheKey = `${this.CACHE_KEY_PREFIX}:${contactNumber}`;
       const cacheData = {
@@ -278,7 +282,7 @@ export class SendMessageController {
         rotationCount: data.rotationCount,
         lastUpdated: new Date().toISOString(),
       };
-      
+
       await this.cache.set(cacheKey, cacheData, this.CACHE_TTL);
     } catch (error) {
       this.logger.error(`Erro ao salvar dados de rotação no cache: ${error}`);
@@ -298,7 +302,7 @@ export class SendMessageController {
     try {
       const cacheKey = `${this.CACHE_KEY_PREFIX}:${contactNumber}`;
       const cacheData = await this.cache.get(cacheKey);
-      
+
       if (cacheData) {
         return {
           usedInstances: new Set(cacheData.usedInstances || []),
@@ -306,7 +310,7 @@ export class SendMessageController {
           rotationCount: cacheData.rotationCount || 0,
         };
       }
-      
+
       return null;
     } catch (error) {
       this.logger.error(`Erro ao recuperar dados de rotação do cache: ${error}`);

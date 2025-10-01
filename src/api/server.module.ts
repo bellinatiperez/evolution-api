@@ -6,6 +6,8 @@ import { Logger } from '@config/logger.config';
 import { BusinessController } from './controllers/business.controller';
 import { CallController } from './controllers/call.controller';
 import { ChatController } from './controllers/chat.controller';
+// External Webhook
+import { ExternalWebhookController } from './controllers/external-webhook.controller';
 import { GroupController } from './controllers/group.controller';
 import { InstanceController } from './controllers/instance.controller';
 import { LabelController } from './controllers/label.controller';
@@ -137,9 +139,6 @@ export const n8nController = new N8nController(n8nService, prismaRepository, waM
 
 const evoaiService = new EvoaiService(waMonitor, prismaRepository, configService, openaiService);
 export const evoaiController = new EvoaiController(evoaiService, prismaRepository, waMonitor);
-
-// External Webhook
-import { ExternalWebhookController } from './controllers/external-webhook.controller';
 
 export const externalWebhookController = new ExternalWebhookController(prismaRepository);
 

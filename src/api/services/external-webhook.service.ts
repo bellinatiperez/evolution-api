@@ -1,10 +1,16 @@
+import {
+  AuthenticationConfig,
+  ExternalWebhookDto,
+  ExternalWebhookUpdateDto,
+  RetryConfig,
+  SecurityConfig,
+} from '@api/dto/external-webhook.dto';
 import { PrismaRepository } from '@api/repository/repository.service';
 import { Logger } from '@config/logger.config';
 import { BadRequestException, InternalServerErrorException, NotFoundException } from '@exceptions';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
-import { ExternalWebhookDto, ExternalWebhookUpdateDto, AuthenticationConfig, RetryConfig, SecurityConfig } from '@api/dto/external-webhook.dto';
+import * as jwt from 'jsonwebtoken';
 
 // Circuit Breaker para controlar falhas consecutivas
 interface CircuitBreakerState {
@@ -225,12 +231,7 @@ export class ExternalWebhookService {
     }
   }
 
-  async sendWebhook(
-    webhookId: string,
-    eventType: string,
-    eventData: any,
-    instanceName?: string,
-  ): Promise<void> {
+  async sendWebhook(webhookId: string, eventType: string, eventData: any, instanceName?: string): Promise<void> {
     try {
       const webhook = await this.prismaRepository.externalWebhook.findUnique({
         where: { id: webhookId },
@@ -262,7 +263,7 @@ export class ExternalWebhookService {
         webhook_events: webhook.events,
         eventType: eventType,
       });
-      
+
       // Verificar filtros de instância
       const filterConfig = webhook.filterConfig as any;
       if (filterConfig && instanceName) {
@@ -301,14 +302,13 @@ export class ExternalWebhookService {
       };
 
       await this.executeWebhookRequest(webhook, payload);
-      
+
       // Registrar sucesso no circuit breaker
       this.recordWebhookSuccess(webhookId);
-      
     } catch (error) {
       // Registrar falha no circuit breaker
       this.recordWebhookFailure(webhookId);
-      
+
       this.logger.error({
         local: 'ExternalWebhookService.sendWebhook',
         message: `Erro ao enviar webhook: ${error.message}`,
@@ -317,7 +317,7 @@ export class ExternalWebhookService {
         instanceName,
         error: error.stack,
       });
-      
+
       // Não re-throw o erro para não quebrar o fluxo principal
       // O sistema deve ser resiliente a falhas de webhook
     }
@@ -346,7 +346,7 @@ export class ExternalWebhookService {
   private async executeWebhookRequest(webhook: any, payload: any): Promise<void> {
     const retryConfig = webhook.retryConfig as RetryConfig;
     const authConfig = webhook.authentication as AuthenticationConfig;
-    const headers = { ...(webhook.headers as Record<string, string> || {}) };
+    const headers = { ...((webhook.headers as Record<string, string>) || {}) };
 
     // Configurar autenticação
     this.configureAuthentication(headers, authConfig);
@@ -361,13 +361,7 @@ export class ExternalWebhookService {
 
     const httpService = axios.create(axiosConfig);
 
-    await this.retryWebhookRequest(
-      httpService,
-      webhook.url,
-      payload,
-      webhook.id,
-      retryConfig,
-    );
+    await this.retryWebhookRequest(httpService, webhook.url, payload, webhook.id, retryConfig);
   }
 
   private configureAuthentication(headers: Record<string, string>, authConfig: AuthenticationConfig): void {
@@ -561,9 +555,10 @@ export class ExternalWebhookService {
         totalExecutions: webhook.totalExecutions || 0,
         successfulExecutions: webhook.successfulExecutions || 0,
         failedExecutions: webhook.failedExecutions || 0,
-        successRate: webhook.totalExecutions > 0 
-          ? ((webhook.successfulExecutions || 0) / webhook.totalExecutions * 100).toFixed(2) + '%'
-          : '0%',
+        successRate:
+          webhook.totalExecutions > 0
+            ? (((webhook.successfulExecutions || 0) / webhook.totalExecutions) * 100).toFixed(2) + '%'
+            : '0%',
         lastExecutionAt: webhook.lastExecutionAt,
         lastExecutionStatus: webhook.lastExecutionStatus,
         lastExecutionError: webhook.lastExecutionError,
@@ -589,7 +584,7 @@ export class ExternalWebhookService {
       if (!securityConfig.signatureSecret || securityConfig.signatureSecret.length < 16) {
         throw new BadRequestException('Chave secreta deve ter pelo menos 16 caracteres');
       }
-      
+
       const validAlgorithms = ['sha256', 'sha1', 'md5'];
       if (securityConfig.signatureAlgorithm && !validAlgorithms.includes(securityConfig.signatureAlgorithm)) {
         throw new BadRequestException('Algoritmo de assinatura inválido');
@@ -601,7 +596,7 @@ export class ExternalWebhookService {
       if (!securityConfig.allowedIps || securityConfig.allowedIps.length === 0) {
         throw new BadRequestException('Lista de IPs permitidos não pode estar vazia');
       }
-      
+
       // Validar formato dos IPs/CIDRs
       for (const ip of securityConfig.allowedIps) {
         if (!this.isValidIpOrCidr(ip)) {
@@ -615,7 +610,7 @@ export class ExternalWebhookService {
       if (!securityConfig.rateLimitRequests || securityConfig.rateLimitRequests < 1) {
         throw new BadRequestException('Número de requisições deve ser maior que 0');
       }
-      
+
       if (!securityConfig.rateLimitWindowMinutes || securityConfig.rateLimitWindowMinutes < 1) {
         throw new BadRequestException('Janela de tempo deve ser maior que 0');
       }
@@ -624,7 +619,8 @@ export class ExternalWebhookService {
 
   private isValidIpOrCidr(ip: string): boolean {
     // Regex para validar IP v4 com ou sem CIDR
-    const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?:\/(?:[0-9]|[1-2][0-9]|3[0-2]))?$/;
+    const ipv4Regex =
+      /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(?:\/(?:[0-9]|[1-2][0-9]|3[0-2]))?$/;
     return ipv4Regex.test(ip);
   }
 
@@ -634,7 +630,12 @@ export class ExternalWebhookService {
     return `${algorithm}=${hmac.digest('hex')}`;
   }
 
-  private validateWebhookSignature(payload: string, signature: string, secret: string, algorithm: string = 'sha256'): boolean {
+  private validateWebhookSignature(
+    payload: string,
+    signature: string,
+    secret: string,
+    algorithm: string = 'sha256',
+  ): boolean {
     const expectedSignature = this.generateWebhookSignature(payload, secret, algorithm);
     return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
   }
@@ -659,10 +660,10 @@ export class ExternalWebhookService {
   private isIpInCidr(ip: string, cidr: string): boolean {
     const [network, prefixLength] = cidr.split('/');
     const mask = ~(0xffffffff >>> parseInt(prefixLength));
-    
+
     const ipInt = this.ipToInt(ip);
     const networkInt = this.ipToInt(network);
-    
+
     return (ipInt & mask) === (networkInt & mask);
   }
 
@@ -673,13 +674,13 @@ export class ExternalWebhookService {
   // Métodos para Circuit Breaker
   private canExecuteWebhook(webhookId: string): boolean {
     const circuitState = this.circuitBreakers.get(webhookId);
-    
+
     if (!circuitState) {
       // Primeiro uso, circuit fechado
       this.circuitBreakers.set(webhookId, {
         failures: 0,
         lastFailureTime: 0,
-        state: 'CLOSED'
+        state: 'CLOSED',
       });
       return true;
     }
@@ -689,7 +690,7 @@ export class ExternalWebhookService {
     switch (circuitState.state) {
       case 'CLOSED':
         return true;
-        
+
       case 'OPEN':
         // Verificar se é hora de tentar novamente (half-open)
         if (now - circuitState.lastFailureTime > this.CIRCUIT_BREAKER_TIMEOUT) {
@@ -697,10 +698,10 @@ export class ExternalWebhookService {
           return true;
         }
         return false;
-        
+
       case 'HALF_OPEN':
         return true;
-        
+
       default:
         return true;
     }
@@ -708,7 +709,7 @@ export class ExternalWebhookService {
 
   private recordWebhookSuccess(webhookId: string): void {
     const circuitState = this.circuitBreakers.get(webhookId);
-    
+
     if (circuitState) {
       // Reset do circuit breaker em caso de sucesso
       circuitState.failures = 0;
@@ -719,12 +720,12 @@ export class ExternalWebhookService {
 
   private recordWebhookFailure(webhookId: string): void {
     let circuitState = this.circuitBreakers.get(webhookId);
-    
+
     if (!circuitState) {
       circuitState = {
         failures: 0,
         lastFailureTime: 0,
-        state: 'CLOSED'
+        state: 'CLOSED',
       };
       this.circuitBreakers.set(webhookId, circuitState);
     }
@@ -735,7 +736,7 @@ export class ExternalWebhookService {
     // Abrir circuit se atingir o threshold
     if (circuitState.failures >= this.CIRCUIT_BREAKER_THRESHOLD) {
       circuitState.state = 'OPEN';
-      
+
       this.logger.warn({
         local: 'ExternalWebhookService.recordWebhookFailure',
         message: `Circuit breaker ABERTO para webhook ${webhookId} após ${circuitState.failures} falhas consecutivas`,
@@ -749,24 +750,26 @@ export class ExternalWebhookService {
   private isValidWebhookUrl(url: string): boolean {
     try {
       const parsedUrl = new URL(url);
-      
+
       // Verificar protocolo
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
         return false;
       }
-      
+
       // Verificar se não é localhost ou IP privado em produção
       const hostname = parsedUrl.hostname.toLowerCase();
-      
+
       // Permitir localhost apenas em desenvolvimento
       const isDevelopment = process.env.NODE_ENV !== 'production';
       if (!isDevelopment) {
         // Bloquear localhost e IPs privados em produção
-        if (hostname === 'localhost' || 
-            hostname === '127.0.0.1' || 
-            hostname.startsWith('192.168.') ||
-            hostname.startsWith('10.') ||
-            hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) {
+        if (
+          hostname === 'localhost' ||
+          hostname === '127.0.0.1' ||
+          hostname.startsWith('192.168.') ||
+          hostname.startsWith('10.') ||
+          hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)
+        ) {
           this.logger.warn({
             local: 'ExternalWebhookService.isValidWebhookUrl',
             message: `URL rejeitada em produção: ${url}`,
@@ -775,7 +778,7 @@ export class ExternalWebhookService {
           return false;
         }
       }
-      
+
       return true;
     } catch (error) {
       this.logger.error({

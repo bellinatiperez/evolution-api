@@ -124,15 +124,11 @@ export class EventManager {
     await this.sqs.emit(eventData);
     await this.webhook.emit(eventData);
     await this.pusher.emit(eventData);
-    
+
     this.logger.info(`Evento emitido: ${JSON.stringify(eventData)}`);
 
     // Enviar para webhooks externos
-    await this.externalWebhookService.sendToAllWebhooks(
-      eventData.event,
-      eventData.data,
-      eventData.instanceName
-    );
+    await this.externalWebhookService.sendToAllWebhooks(eventData.event, eventData.data, eventData.instanceName);
   }
 
   public async setInstance(instanceName: string, data: any): Promise<any> {

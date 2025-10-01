@@ -31,6 +31,7 @@ import {
   textMessageSchema,
 } from '@validate/validate.schema';
 import { RequestHandler, Router } from 'express';
+import { validate } from 'jsonschema';
 import multer from 'multer';
 
 import { HttpStatus } from './index.router';
@@ -65,11 +66,10 @@ export class MessageRouter extends RouterBroker {
         // Validação manual sem instanceName e sem guards
         const data = new SendTextDto();
         Object.assign(data, req.body);
-        
+
         // Validação do schema
-        const { validate } = require('jsonschema');
         const v = validate(data, textMessageSchema);
-        
+
         if (!v.valid) {
           const message: any[] = v.errors.map(({ stack, schema }) => {
             let message: string;

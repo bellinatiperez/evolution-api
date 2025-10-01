@@ -1,16 +1,14 @@
+import { ExternalWebhookDto, ExternalWebhookUpdateDto } from '@api/dto/external-webhook.dto';
 import { PrismaRepository } from '@api/repository/repository.service';
 import { Logger } from '@config/logger.config';
 import { BadRequestException, InternalServerErrorException, NotFoundException } from '@exceptions';
-import { ExternalWebhookDto, ExternalWebhookUpdateDto } from '@api/dto/external-webhook.dto';
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import axios from 'axios';
 import * as jwt from 'jsonwebtoken';
 
 export class ExternalWebhookController {
   private readonly logger = new Logger('ExternalWebhookController');
 
-  constructor(
-    private readonly prismaRepository: PrismaRepository,
-  ) {}
+  constructor(private readonly prismaRepository: PrismaRepository) {}
 
   async create(data: ExternalWebhookDto) {
     try {
@@ -37,19 +35,23 @@ export class ExternalWebhookController {
           gen_random_uuid(), ${data.name}, ${data.url}, ${data.enabled || true}, 
           ${JSON.stringify(data.events || [])}::jsonb, ${JSON.stringify(data.headers || {})}::jsonb, 
           ${JSON.stringify(data.authentication || { type: 'none' })}::jsonb, 
-          ${JSON.stringify(data.retryConfig || {
-            maxAttempts: 3,
-            initialDelaySeconds: 5,
-            useExponentialBackoff: true,
-            maxDelaySeconds: 300,
-            jitterFactor: 0.2,
-            nonRetryableStatusCodes: [400, 401, 403, 404, 422],
-          })}::jsonb, 
-          ${JSON.stringify(data.securityConfig || {
-            enableSignatureValidation: false,
-            enableIpWhitelist: false,
-            enableRateLimit: false,
-          })}::jsonb,
+          ${JSON.stringify(
+            data.retryConfig || {
+              maxAttempts: 3,
+              initialDelaySeconds: 5,
+              useExponentialBackoff: true,
+              maxDelaySeconds: 300,
+              jitterFactor: 0.2,
+              nonRetryableStatusCodes: [400, 401, 403, 404, 422],
+            },
+          )}::jsonb, 
+          ${JSON.stringify(
+            data.securityConfig || {
+              enableSignatureValidation: false,
+              enableIpWhitelist: false,
+              enableRateLimit: false,
+            },
+          )}::jsonb,
           ${JSON.stringify(data.filterConfig || {})}::jsonb, 
           ${data.timeout || 30000}, ${data.description || null}, 
           NOW(), NOW()
@@ -61,7 +63,7 @@ export class ExternalWebhookController {
       }
 
       this.logger.log(`Webhook externo criado: ${data.name}`);
-      
+
       return {
         status: 201,
         message: 'Webhook externo criado com sucesso',
@@ -69,11 +71,11 @@ export class ExternalWebhookController {
       };
     } catch (error) {
       this.logger.error(`Erro ao criar webhook externo: ${error.message || error}`);
-      
+
       if (error instanceof BadRequestException) {
         throw error;
       }
-      
+
       throw new InternalServerErrorException('Erro interno do servidor');
     }
   }
@@ -112,11 +114,11 @@ export class ExternalWebhookController {
       };
     } catch (error) {
       this.logger.error(`Erro ao buscar webhook: ${error.message || error}`);
-      
+
       if (error instanceof NotFoundException) {
         throw error;
       }
-      
+
       throw new InternalServerErrorException('Erro interno do servidor');
     }
   }
@@ -196,7 +198,8 @@ export class ExternalWebhookController {
       updateFields.push('"updatedAt" = NOW()');
       updateValues.push(id);
 
-      if (updateFields.length === 1) { // Apenas updatedAt
+      if (updateFields.length === 1) {
+        // Apenas updatedAt
         throw new BadRequestException('Nenhum campo para atualizar foi fornecido');
       }
 
@@ -222,11 +225,11 @@ export class ExternalWebhookController {
       };
     } catch (error) {
       this.logger.error(`Erro ao atualizar webhook: ${error.message || error}`);
-      
+
       if (error instanceof BadRequestException || error instanceof NotFoundException) {
         throw error;
       }
-      
+
       throw new InternalServerErrorException('Erro interno do servidor');
     }
   }
@@ -250,11 +253,11 @@ export class ExternalWebhookController {
       };
     } catch (error) {
       this.logger.error(`Erro ao deletar webhook: ${error.message || error}`);
-      
+
       if (error instanceof NotFoundException) {
         throw error;
       }
-      
+
       throw new InternalServerErrorException('Erro interno do servidor');
     }
   }
@@ -292,11 +295,11 @@ export class ExternalWebhookController {
       };
     } catch (error) {
       this.logger.error(`Erro ao alterar status do webhook: ${error.message || error}`);
-      
+
       if (error instanceof NotFoundException) {
         throw error;
       }
-      
+
       throw new InternalServerErrorException('Erro interno do servidor');
     }
   }
@@ -318,9 +321,8 @@ export class ExternalWebhookController {
       }
 
       const stats = webhook[0];
-      const successRate = stats.totalExecutions > 0 
-        ? ((stats.successfulExecutions / stats.totalExecutions) * 100).toFixed(2)
-        : '0.00';
+      const successRate =
+        stats.totalExecutions > 0 ? ((stats.successfulExecutions / stats.totalExecutions) * 100).toFixed(2) : '0.00';
 
       return {
         status: 200,
@@ -332,11 +334,11 @@ export class ExternalWebhookController {
       };
     } catch (error) {
       this.logger.error(`Erro ao buscar estatísticas do webhook: ${error.message || error}`);
-      
+
       if (error instanceof NotFoundException) {
         throw error;
       }
-      
+
       throw new InternalServerErrorException('Erro interno do servidor');
     }
   }
@@ -364,18 +366,22 @@ export class ExternalWebhookController {
         // Configurar autenticação
         this.configureAuthentication(headers, JSON.parse(webhookData.authentication || '{}'));
 
-        const response = await axios.post(webhookData.url, {
-          event: 'webhook_test',
-          data: testData || { message: 'Teste de webhook' },
-          timestamp: new Date().toISOString(),
-          webhook: {
-            id: webhookData.id,
-            name: webhookData.name,
+        const response = await axios.post(
+          webhookData.url,
+          {
+            event: 'webhook_test',
+            data: testData || { message: 'Teste de webhook' },
+            timestamp: new Date().toISOString(),
+            webhook: {
+              id: webhookData.id,
+              name: webhookData.name,
+            },
           },
-        }, {
-          headers,
-          timeout: webhookData.timeout || 30000,
-        });
+          {
+            headers,
+            timeout: webhookData.timeout || 30000,
+          },
+        );
 
         const responseTime = Date.now() - startTime;
 
@@ -435,11 +441,11 @@ export class ExternalWebhookController {
       }
     } catch (error) {
       this.logger.error(`Erro ao testar webhook: ${error.message || error}`);
-      
+
       if (error instanceof NotFoundException) {
         throw error;
       }
-      
+
       throw new InternalServerErrorException('Erro interno do servidor');
     }
   }
