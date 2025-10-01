@@ -1,0 +1,3 @@
+[submodule "manager"]
+	path = manager
+	url = https://github.com/bellinatiperez/evolution-manager-v2.git
