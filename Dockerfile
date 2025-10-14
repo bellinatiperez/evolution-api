@@ -30,6 +30,18 @@ RUN ./Docker/scripts/generate_database.sh
 
 RUN npm run build
 
+# Build Manager (Vite -> dist)
+FROM node:24-alpine AS manager_builder
+WORKDIR /manager
+
+# Install manager deps for build
+COPY ./manager/package*.json ./
+RUN npm ci --no-audit --no-fund
+
+# Copy manager source and build
+COPY ./manager ./
+RUN npm run build
+
 FROM node:24-alpine AS final
 
 RUN apk update && \
@@ -37,6 +49,8 @@ RUN apk update && \
 
 ENV TZ=America/Sao_Paulo
 ENV DOCKER_ENV=true
+ENV SERVER_PORT=8080
+ENV SERVER_URL=http://localhost:8080
 
 WORKDIR /evolution
 
@@ -46,7 +60,7 @@ COPY --from=builder /evolution/package-lock.json ./package-lock.json
 COPY --from=builder /evolution/node_modules ./node_modules
 COPY --from=builder /evolution/dist ./dist
 COPY --from=builder /evolution/prisma ./prisma
-COPY --from=builder /evolution/manager ./manager
+COPY --from=manager_builder /manager/dist ./manager/dist
 COPY --from=builder /evolution/public ./public
 COPY --from=builder /evolution/.env ./.env
 COPY --from=builder /evolution/Docker ./Docker

@@ -3,13 +3,13 @@ version: "3.8"
 services:
   api:
     container_name: evolution_api
-    image: bellinatiperez/evolution-api:latest
+    image: bellinatiperez/evolution-api:1.0.0-beta
     restart: always
     depends_on:
       - redis
       - evolution-postgres
     ports:
-      - "8088:8088"
+      - "8080:8080"
     volumes:
       - evolution_instances:/evolution/instances
     networks:

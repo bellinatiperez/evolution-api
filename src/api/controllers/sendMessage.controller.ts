@@ -36,6 +36,23 @@ export class SendMessageController {
   // Configurações de cache para rotação de instâncias
   private readonly CACHE_KEY_PREFIX = 'instance_rotation';
   private readonly CACHE_TTL = 24 * 60 * 60; // 24 horas em segundos
+  private readonly GLOBAL_CACHE_KEY = 'global_rotation';
+
+  // Fallback em memória quando o cache não está habilitado
+  private rotationMemory = new Map<
+    string,
+    {
+      usedInstances: Set<string>;
+      lastUsedInstance: string | null;
+      rotationCount: number;
+    }
+  >();
+
+  // Estado global em memória para evitar repetição imediata de instância
+  private globalRotationMemory: {
+    lastUsedInstance: string | null;
+    rotationCount: number;
+  } = { lastUsedInstance: null, rotationCount: 0 };
 
   constructor(
     private readonly waMonitor: WAMonitoringService,
@@ -189,35 +206,46 @@ export class SendMessageController {
       rotationInfo.rotationCount++;
     }
 
-    let selectedInstance: string;
+    // Seleção baseada em round-robin global + restrições do contato
+    let selectedInstance: string | undefined;
+    const globalRotation = await this.getGlobalRotationData();
 
-    // Usar algoritmo round-robin determinístico
-    if (rotationInfo.lastUsedInstance) {
-      // Encontrar a próxima instância na sequência ordenada
-      const lastIndex = sortedInstances.indexOf(rotationInfo.lastUsedInstance);
-      let nextIndex = (lastIndex + 1) % sortedInstances.length;
+    // Calcular ponto de partida global (sempre avançar para próxima instância global)
+    let globalNextIndex = 0;
+    if (globalRotation?.lastUsedInstance) {
+      const globalLastIndex = sortedInstances.indexOf(globalRotation.lastUsedInstance);
+      globalNextIndex = globalLastIndex >= 0 ? (globalLastIndex + 1) % sortedInstances.length : 0;
+    }
 
-      // Procurar a próxima instância não utilizada neste ciclo
-      let attempts = 0;
-      while (attempts < sortedInstances.length) {
-        const candidateInstance = sortedInstances[nextIndex];
+    // Primeiro passe: respeitar ambos critérios (diferente da última do contato e não usada no ciclo)
+    for (let i = 0; i < sortedInstances.length; i++) {
+      const idx = (globalNextIndex + i) % sortedInstances.length;
+      const candidate = sortedInstances[idx];
+      const notSameAsLastContact = candidate !== rotationInfo.lastUsedInstance;
+      const notUsedInCycle = !rotationInfo.usedInstances.has(candidate);
 
-        if (!rotationInfo.usedInstances.has(candidateInstance)) {
-          selectedInstance = candidateInstance;
+      if (notSameAsLastContact && notUsedInCycle) {
+        selectedInstance = candidate;
+        break;
+      }
+    }
+
+    // Segundo passe (fallback): respeitar critério do contato (não repetir consecutivamente), mesmo que já usado no ciclo
+    if (!selectedInstance) {
+      for (let i = 0; i < sortedInstances.length; i++) {
+        const idx = (globalNextIndex + i) % sortedInstances.length;
+        const candidate = sortedInstances[idx];
+        const notSameAsLastContact = candidate !== rotationInfo.lastUsedInstance;
+        if (notSameAsLastContact) {
+          selectedInstance = candidate;
           break;
         }
-
-        nextIndex = (nextIndex + 1) % sortedInstances.length;
-        attempts++;
       }
+    }
 
-      // Se todas foram usadas (não deveria acontecer devido ao reset acima), usar a próxima na sequência
-      if (!selectedInstance) {
-        selectedInstance = sortedInstances[nextIndex];
-      }
-    } else {
-      // Primeira seleção para este contato - usar a primeira instância disponível
-      selectedInstance = sortedInstances[0];
+    // Último fallback: usar o globalNext mesmo que seja a única opção
+    if (!selectedInstance) {
+      selectedInstance = sortedInstances[globalNextIndex];
     }
 
     // Atualizar informações de rotação
@@ -226,6 +254,12 @@ export class SendMessageController {
 
     // Salvar no cache
     await this.saveRotationDataToCache(normalizedContact, rotationInfo);
+
+    // Atualizar rotação global (sempre avança para a instância selecionada)
+    await this.saveGlobalRotationData({
+      lastUsedInstance: selectedInstance,
+      rotationCount: (globalRotation?.rotationCount ?? 0) + 1,
+    });
 
     this.logger.info(
       `Seleção de instância - Contato: ${normalizedContact}, Instância: ${selectedInstance}, Ciclo: ${rotationInfo.rotationCount}, Usadas: ${rotationInfo.usedInstances.size}/${sortedInstances.length}`,
@@ -284,6 +318,13 @@ export class SendMessageController {
       };
 
       await this.cache.set(cacheKey, cacheData, this.CACHE_TTL);
+
+      // Atualiza fallback em memória
+      this.rotationMemory.set(contactNumber, {
+        usedInstances: new Set(data.usedInstances),
+        lastUsedInstance: data.lastUsedInstance,
+        rotationCount: data.rotationCount,
+      });
     } catch (error) {
       this.logger.error(`Erro ao salvar dados de rotação no cache: ${error}`);
       // Em caso de erro, os dados são perdidos mas o sistema continua funcionando
@@ -311,10 +352,67 @@ export class SendMessageController {
         };
       }
 
+      // Fallback em memória quando cache não está habilitado
+      const mem = this.rotationMemory.get(contactNumber);
+      if (mem) {
+        return {
+          usedInstances: new Set(mem.usedInstances),
+          lastUsedInstance: mem.lastUsedInstance,
+          rotationCount: mem.rotationCount,
+        };
+      }
+
       return null;
     } catch (error) {
       this.logger.error(`Erro ao recuperar dados de rotação do cache: ${error}`);
       // Em caso de erro, retorna null para que o contato seja tratado como novo
+      return null;
+    }
+  }
+
+  /**
+   * Salva dados de rotação global (última instância usada)
+   */
+  private async saveGlobalRotationData(data: { lastUsedInstance: string | null; rotationCount: number }) {
+    try {
+      const cacheData = {
+        lastUsedInstance: data.lastUsedInstance,
+        rotationCount: data.rotationCount,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      await this.cache.set(this.GLOBAL_CACHE_KEY, cacheData, this.CACHE_TTL);
+
+      // Atualiza fallback em memória
+      this.globalRotationMemory = {
+        lastUsedInstance: data.lastUsedInstance,
+        rotationCount: data.rotationCount,
+      };
+    } catch (error) {
+      this.logger.error(`Erro ao salvar dados de rotação global no cache: ${error}`);
+    }
+  }
+
+  /**
+   * Recupera dados de rotação global (última instância usada)
+   */
+  private async getGlobalRotationData(): Promise<{ lastUsedInstance: string | null; rotationCount: number } | null> {
+    try {
+      const cacheData = await this.cache.get(this.GLOBAL_CACHE_KEY);
+      if (cacheData) {
+        return {
+          lastUsedInstance: cacheData.lastUsedInstance || null,
+          rotationCount: cacheData.rotationCount || 0,
+        };
+      }
+
+      // Fallback em memória
+      return {
+        lastUsedInstance: this.globalRotationMemory.lastUsedInstance,
+        rotationCount: this.globalRotationMemory.rotationCount,
+      };
+    } catch (error) {
+      this.logger.error(`Erro ao recuperar rotação global do cache: ${error}`);
       return null;
     }
   }
@@ -326,6 +424,9 @@ export class SendMessageController {
     try {
       const cacheKey = `${this.CACHE_KEY_PREFIX}:${contactNumber}`;
       await this.cache.delete(cacheKey);
+
+      // Remover também do fallback em memória
+      this.rotationMemory.delete(contactNumber);
     } catch (error) {
       this.logger.error(`Erro ao remover dados de rotação do cache: ${error}`);
       // Em caso de erro, os dados permanecerão no cache até expirarem pelo TTL
