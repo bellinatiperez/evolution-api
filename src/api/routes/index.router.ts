@@ -19,6 +19,7 @@ import { ChatRouter } from './chat.router';
 import { ExternalWebhookRouter } from './external-webhook.router';
 import { GroupRouter } from './group.router';
 import { InstanceRouter } from './instance.router';
+import { InstanceGroupRouter } from './instanceGroup.router';
 import { LabelRouter } from './label.router';
 import { ProxyRouter } from './proxy.router';
 import { MessageRouter } from './sendMessage.router';
@@ -211,6 +212,7 @@ router
     });
   })
   .use('/instance', new InstanceRouter(configService, ...guards).router)
+  .use('/instance-group', new InstanceGroupRouter(...guards).router)
   .use('/message', new MessageRouter(...guards).router)
   .use('/call', new CallRouter(...guards).router)
   .use('/chat', new ChatRouter(...guards).router)

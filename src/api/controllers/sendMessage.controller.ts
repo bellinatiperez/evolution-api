@@ -1,4 +1,5 @@
 import { InstanceDto } from '@api/dto/instance.dto';
+import { SendTextWithGroupBalancingDto } from '@api/dto/instanceGroup.dto';
 import {
   SendAudioDto,
   SendButtonsDto,
@@ -15,6 +16,7 @@ import {
   SendTextDto,
 } from '@api/dto/sendMessage.dto';
 import { CacheService } from '@api/services/cache.service';
+import { InstanceGroupService } from '@api/services/instanceGroup.service';
 import { WAMonitoringService } from '@api/services/monitor.service';
 import { Logger } from '@config/logger.config';
 import { BadRequestException, InternalServerErrorException } from '@exceptions';
@@ -37,6 +39,7 @@ export class SendMessageController {
   private readonly CACHE_KEY_PREFIX = 'instance_rotation';
   private readonly CACHE_TTL = 24 * 60 * 60; // 24 horas em segundos
   private readonly GLOBAL_CACHE_KEY = 'global_rotation';
+  private readonly GROUP_CACHE_KEY_PREFIX = 'group_rotation';
 
   // Fallback em memória quando o cache não está habilitado
   private rotationMemory = new Map<
@@ -57,6 +60,7 @@ export class SendMessageController {
   constructor(
     private readonly waMonitor: WAMonitoringService,
     private readonly cache: CacheService,
+    private readonly instanceGroupService?: InstanceGroupService,
   ) {}
 
   public async sendTemplate({ instanceName }: InstanceDto, data: SendTemplateDto) {
@@ -166,6 +170,165 @@ export class SendMessageController {
       this.logger.error(`Erro no envio com balanceamento: ${JSON.stringify(error.message)}`);
       throw error;
     }
+  }
+
+  /**
+   * Envia mensagem de texto com balanceamento automático de instâncias por grupo
+   */
+  public async sendTextWithGroupBalancing(data: SendTextWithGroupBalancingDto) {
+    try {
+      this.logger.info(`Iniciando envio com balanceamento por grupo: ${data.alias} para contato: ${data.number}`);
+
+      if (!this.instanceGroupService) {
+        throw new InternalServerErrorException('Instance Group Service não está disponível');
+      }
+
+      // Buscar o grupo pelo alias
+      const group = await this.instanceGroupService.findByAlias(data.alias);
+
+      // Obter instâncias ativas do grupo
+      const groupInstances = await this.instanceGroupService.getActiveInstances(group.id);
+
+      if (groupInstances.length === 0) {
+        throw new BadRequestException('Nenhuma instância ativa encontrada no grupo especificado');
+      }
+
+      // Selecionar instância usando algoritmo de balanceamento específico do grupo
+      const selectedInstance = await this.selectInstanceForContactInGroup(data.number, groupInstances, group.id);
+
+      this.logger.info(
+        `Instância selecionada: ${selectedInstance} para contato: ${data.number} no grupo: ${data.alias}`,
+      );
+
+      // Preparar dados para envio
+      const sendData: SendTextDto = {
+        number: data.number,
+        text: data.text,
+        delay: data.delay,
+        quoted: data.quoted,
+        linkPreview: data.linkPreview,
+        mentionsEveryOne: data.mentionsEveryOne,
+        mentioned: data.mentioned,
+      };
+
+      // Enviar mensagem usando a instância selecionada
+      const result = await this.waMonitor.waInstances[selectedInstance].textMessage(sendData);
+
+      this.logger.info(`Mensagem enviada com sucesso via instância: ${selectedInstance} (grupo: ${data.alias})`);
+
+      return {
+        ...result,
+        instanceUsed: selectedInstance,
+        groupId: group.id,
+        groupAlias: data.alias,
+        balancingInfo: await this.getContactBalancingInfoInGroup(data.number, group.id),
+      };
+    } catch (error) {
+      this.logger.error(`Erro no envio com balanceamento por grupo: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Seleciona instância para contato dentro de um grupo específico
+   */
+  private async selectInstanceForContactInGroup(
+    contact: string,
+    groupInstances: string[],
+    groupId: string,
+  ): Promise<string> {
+    const contactKey = `${this.GROUP_CACHE_KEY_PREFIX}:${groupId}:${contact}`;
+    const globalKey = `${this.GROUP_CACHE_KEY_PREFIX}:${groupId}:global`;
+
+    // Obter dados de rotação do contato no grupo
+    const contactRotationData = (await this.getRotationDataFromCache(contactKey)) || {
+      usedInstances: new Set<string>(),
+      lastUsedInstance: null,
+      rotationCount: 0,
+    };
+    const globalRotationData = (await this.getGlobalRotationData()) || {
+      lastUsedInstance: null,
+      rotationCount: 0,
+    };
+
+    // Ordenar instâncias para garantir ordem consistente
+    const orderedInstances = [...groupInstances].sort();
+
+    // Calcular próxima instância global
+    const currentGlobalIndex = globalRotationData.lastUsedInstance
+      ? orderedInstances.indexOf(globalRotationData.lastUsedInstance)
+      : -1;
+    const nextGlobalIndex = (currentGlobalIndex + 1) % orderedInstances.length;
+    const nextGlobalInstance = orderedInstances[nextGlobalIndex];
+
+    let selectedInstance: string;
+
+    // Verificar se o contato pode usar a próxima instância global
+    if (
+      nextGlobalInstance !== contactRotationData.lastUsedInstance &&
+      !contactRotationData.usedInstances.has(nextGlobalInstance)
+    ) {
+      // Usar a próxima instância global
+      selectedInstance = nextGlobalInstance;
+    } else {
+      // Encontrar primeira instância disponível que não seja a última usada pelo contato
+      selectedInstance =
+        orderedInstances.find(
+          (instance) =>
+            instance !== contactRotationData.lastUsedInstance && !contactRotationData.usedInstances.has(instance),
+        ) ||
+        orderedInstances.find((instance) => instance !== contactRotationData.lastUsedInstance) ||
+        orderedInstances[0];
+    }
+
+    // Atualizar dados de rotação do contato
+    const newUsedInstances = new Set(contactRotationData.usedInstances);
+    newUsedInstances.add(selectedInstance);
+
+    // Reset do ciclo se todas as instâncias foram usadas
+    if (newUsedInstances.size >= orderedInstances.length) {
+      newUsedInstances.clear();
+      newUsedInstances.add(selectedInstance);
+    }
+
+    const newContactRotationData = {
+      usedInstances: newUsedInstances,
+      lastUsedInstance: selectedInstance,
+      rotationCount: contactRotationData.rotationCount + 1,
+    };
+
+    // Atualizar dados globais
+    const newGlobalRotationData = {
+      lastUsedInstance: selectedInstance,
+      rotationCount: globalRotationData.rotationCount + 1,
+    };
+
+    // Salvar no cache
+    await this.saveRotationDataToCache(contactKey, newContactRotationData);
+    await this.saveGlobalRotationData(newGlobalRotationData);
+
+    return selectedInstance;
+  }
+
+  /**
+   * Obtém informações de balanceamento para um contato em um grupo específico
+   */
+  private async getContactBalancingInfoInGroup(contact: string, groupId: string) {
+    const contactKey = `${this.GROUP_CACHE_KEY_PREFIX}:${groupId}:${contact}`;
+    const globalKey = `${this.GROUP_CACHE_KEY_PREFIX}:${groupId}:global`;
+
+    const contactData = await this.getRotationDataFromCache(contactKey);
+    const globalData = await this.getGlobalRotationData();
+
+    return {
+      contact,
+      groupId,
+      lastUsedInstance: contactData.lastUsedInstance,
+      usedInstancesInCycle: Array.from(contactData.usedInstances),
+      rotationCount: contactData.rotationCount,
+      globalLastUsedInstance: globalData.lastUsedInstance,
+      globalRotationCount: globalData.rotationCount,
+    };
   }
 
   /**

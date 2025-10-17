@@ -1,0 +1,276 @@
+{
+  "info": {
+    "name": "Evolution API - Instance Groups",
+    "description": "Collection para testar os endpoints de grupos de instâncias",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "SUA_API_KEY_AQUI",
+      "type": "string"
+    },
+    {
+      "key": "groupId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Instance Groups",
+      "item": [
+        {
+          "name": "1. Criar Grupo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Grupo Vendas\",\n  \"description\": \"Grupo para equipe de vendas com balanceamento automático\",\n  \"enabled\": true,\n  \"instances\": [\n    \"vendedor1\",\n    \"vendedor2\",\n    \"vendedor3\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/instance-group",
+              "host": ["{{baseUrl}}"],
+              "path": ["instance-group"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('groupId', response.id);",
+                  "    console.log('Group ID saved:', response.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Listar Grupos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/instance-group",
+              "host": ["{{baseUrl}}"],
+              "path": ["instance-group"]
+            }
+          }
+        },
+        {
+          "name": "3. Obter Grupo Específico",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/instance-group/{{groupId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["instance-group", "{{groupId}}"]
+            }
+          }
+        },
+        {
+          "name": "4. Atualizar Grupo",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Grupo Vendas Atualizado\",\n  \"description\": \"Descrição atualizada do grupo\",\n  \"enabled\": true,\n  \"instances\": [\n    \"vendedor1\",\n    \"vendedor2\",\n    \"vendedor3\",\n    \"vendedor4\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/instance-group/{{groupId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["instance-group", "{{groupId}}"]
+            }
+          }
+        },
+        {
+          "name": "5. Adicionar Instância ao Grupo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instanceName\": \"vendedor5\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/instance-group/{{groupId}}/instances",
+              "host": ["{{baseUrl}}"],
+              "path": ["instance-group", "{{groupId}}", "instances"]
+            }
+          }
+        },
+        {
+          "name": "6. Remover Instância do Grupo",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instanceName\": \"vendedor2\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/instance-group/{{groupId}}/instances",
+              "host": ["{{baseUrl}}"],
+              "path": ["instance-group", "{{groupId}}", "instances"]
+            }
+          }
+        },
+        {
+          "name": "7. Deletar Grupo",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/instance-group/{{groupId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["instance-group", "{{groupId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mensagens com Balanceamento",
+      "item": [
+        {
+          "name": "Enviar Texto com Balanceamento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupId\": \"{{groupId}}\",\n  \"number\": \"5511999999999\",\n  \"text\": \"Olá! Esta mensagem foi enviada com balanceamento automático entre as instâncias do grupo.\",\n  \"delay\": 1000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/message/sendTextWithGroupBalancing",
+              "host": ["{{baseUrl}}"],
+              "path": ["message", "sendTextWithGroupBalancing"]
+            }
+          }
+        },
+        {
+          "name": "Enviar Texto com Quoted",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupId\": \"{{groupId}}\",\n  \"number\": \"5511999999999\",\n  \"text\": \"Esta é uma resposta a uma mensagem anterior\",\n  \"quoted\": {\n    \"key\": {\n      \"remoteJid\": \"5511999999999@s.whatsapp.net\",\n      \"fromMe\": false,\n      \"id\": \"message-id-aqui\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/message/sendTextWithGroupBalancing",
+              "host": ["{{baseUrl}}"],
+              "path": ["message", "sendTextWithGroupBalancing"]
+            }
+          }
+        },
+        {
+          "name": "Enviar Texto com Menções",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "apikey",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupId\": \"{{groupId}}\",\n  \"number\": \"5511999999999@g.us\",\n  \"text\": \"Olá @5511888888888! Como você está?\",\n  \"mentioned\": [\"5511888888888\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/message/sendTextWithGroupBalancing",
+              "host": ["{{baseUrl}}"],
+              "path": ["message", "sendTextWithGroupBalancing"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

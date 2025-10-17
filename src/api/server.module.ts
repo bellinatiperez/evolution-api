@@ -10,6 +10,7 @@ import { ChatController } from './controllers/chat.controller';
 import { ExternalWebhookController } from './controllers/external-webhook.controller';
 import { GroupController } from './controllers/group.controller';
 import { InstanceController } from './controllers/instance.controller';
+import { InstanceGroupController } from './controllers/instanceGroup.controller';
 import { LabelController } from './controllers/label.controller';
 import { ProxyController } from './controllers/proxy.controller';
 import { SendMessageController } from './controllers/sendMessage.controller';
@@ -42,6 +43,7 @@ import { S3Service } from './integrations/storage/s3/services/s3.service';
 import { ProviderFiles } from './provider/sessions';
 import { PrismaRepository } from './repository/repository.service';
 import { CacheService } from './services/cache.service';
+import { InstanceGroupService } from './services/instanceGroup.service';
 import { WAMonitoringService } from './services/monitor.service';
 import { ProxyService } from './services/proxy.service';
 import { SettingsService } from './services/settings.service';
@@ -102,7 +104,11 @@ export const instanceController = new InstanceController(
   baileysCache,
   providerFiles,
 );
-export const sendMessageController = new SendMessageController(waMonitor, cache);
+
+const instanceGroupService = new InstanceGroupService(prismaRepository, waMonitor);
+export const instanceGroupController = new InstanceGroupController(instanceGroupService, waMonitor, prismaRepository);
+
+export const sendMessageController = new SendMessageController(waMonitor, cache, instanceGroupService);
 export const callController = new CallController(waMonitor);
 export const chatController = new ChatController(waMonitor);
 export const businessController = new BusinessController(waMonitor);

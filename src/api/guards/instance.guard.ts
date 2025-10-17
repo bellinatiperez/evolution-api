@@ -26,7 +26,8 @@ export async function instanceExistsGuard(req: Request, _: Response, next: NextF
   if (
     req.originalUrl.includes('/instance/create') ||
     req.originalUrl.includes('/instance/fetchInstances') ||
-    req.originalUrl.includes('/external-webhook')
+    req.originalUrl.includes('/external-webhook') ||
+    req.originalUrl.includes('/instance-group')
   ) {
     return next();
   }

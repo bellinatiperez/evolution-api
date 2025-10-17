@@ -750,6 +750,21 @@ model EvoaiSetting {
   instanceId      String    @unique
 }
 
+model InstanceGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique @db.VarChar(100)
+  alias       String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  enabled     Boolean  @default(true) @db.Boolean
+  instances   Json     @db.JsonB // Array of instance names
+  createdAt   DateTime @default(now()) @db.Timestamp
+  updatedAt   DateTime @updatedAt @db.Timestamp
+
+  @@index([enabled])
+  @@index([name])
+  @@index([alias])
+}
+
 model ExternalWebhook {
   id                    String    @id @default(cuid())
   name                  String    @unique @db.VarChar(100)

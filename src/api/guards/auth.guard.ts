@@ -21,6 +21,11 @@ async function apikey(req: Request, _: Response, next: NextFunction) {
     return next();
   }
 
+  // Permitir acesso direto para instance-group com chave global
+  if (req.originalUrl.includes('/instance-group') && env.KEY === key) {
+    return next();
+  }
+
   if (env.KEY === key) {
     return next();
   }
@@ -28,6 +33,7 @@ async function apikey(req: Request, _: Response, next: NextFunction) {
   if (
     (req.originalUrl.includes('/instance/create') ||
       req.originalUrl.includes('/instance/fetchInstances') ||
+      req.originalUrl.includes('/instance-group') ||
       req.originalUrl.includes('/external-webhook')) &&
     !key
   ) {

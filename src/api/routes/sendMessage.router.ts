@@ -1,4 +1,5 @@
 import { RouterBroker } from '@api/abstract/abstract.router';
+import { SendTextWithGroupBalancingDto } from '@api/dto/instanceGroup.dto';
 import {
   SendAudioDto,
   SendButtonsDto,
@@ -15,6 +16,7 @@ import {
   SendTextDto,
 } from '@api/dto/sendMessage.dto';
 import { sendMessageController } from '@api/server.module';
+import { sendTextWithGroupBalancingSchema } from '@validate/instanceGroup.schema';
 import {
   audioMessageSchema,
   buttonsMessageSchema,
@@ -84,6 +86,30 @@ export class MessageRouter extends RouterBroker {
         }
 
         const response = await sendMessageController.sendTextWithBalancing(data);
+        return res.status(HttpStatus.CREATED).json(response);
+      })
+      .post(this.routerPath('sendTextWithGroupBalancing', false), async (req, res) => {
+        // Validação manual sem instanceName e sem guards
+        const data = new SendTextWithGroupBalancingDto();
+        Object.assign(data, req.body);
+
+        // Validação do schema
+        const v = validate(data, sendTextWithGroupBalancingSchema);
+
+        if (!v.valid) {
+          const message: any[] = v.errors.map(({ stack, schema }) => {
+            let message: string;
+            if (schema['description']) {
+              message = schema['description'];
+            } else {
+              message = stack.replace('instance.', '');
+            }
+            return message;
+          });
+          return res.status(400).json({ status: 400, error: 'Bad Request', response: { message } });
+        }
+
+        const response = await sendMessageController.sendTextWithGroupBalancing(data);
         return res.status(HttpStatus.CREATED).json(response);
       })
       .post(this.routerPath('sendMedia'), ...guards, upload.single('file'), async (req, res) => {
