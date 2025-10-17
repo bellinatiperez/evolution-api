@@ -25,13 +25,23 @@ BEGIN
     END IF;
 END $$;
 
--- Update existing records with generated aliases based on their names
+-- Update existing records with generated aliases based on their names (only if alias is null)
 UPDATE "InstanceGroup" 
 SET "alias" = LOWER(REGEXP_REPLACE(REGEXP_REPLACE("name", '\s+', '-', 'g'), '[^a-z0-9-]', '', 'g'))
 WHERE "alias" IS NULL;
 
--- Now make the column NOT NULL and add the unique constraint
-ALTER TABLE "InstanceGroup" ALTER COLUMN "alias" SET NOT NULL;
+-- Make the column NOT NULL if it exists and isn't already NOT NULL
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'InstanceGroup' 
+        AND column_name = 'alias' 
+        AND is_nullable = 'YES'
+    ) THEN
+        ALTER TABLE "InstanceGroup" ALTER COLUMN "alias" SET NOT NULL;
+    END IF;
+END $$;
 
 -- CreateIndex (if not exists)
 DO $$
