@@ -2180,6 +2180,11 @@ export class BaileysStartupService extends ChannelStartupService {
         messageRaw.groupId = groupInfo.groupId;
       }
 
+      // Incluir metadata quando disponível
+      if (options?.metadata) {
+        messageRaw.metadata = options.metadata;
+      }
+
       const isMedia =
         messageSent?.message?.imageMessage ||
         messageSent?.message?.videoMessage ||
@@ -2394,6 +2399,7 @@ export class BaileysStartupService extends ChannelStartupService {
         linkPreview: data?.linkPreview,
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
+        metadata: data?.metadata,
       },
       isIntegration,
       groupInfo,

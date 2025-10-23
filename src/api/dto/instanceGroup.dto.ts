@@ -49,4 +49,5 @@ export class SendTextWithGroupBalancingDto {
   linkPreview?: boolean;
   mentionsEveryOne?: boolean;
   mentioned?: string[];
+  metadata?: Record<string, any>;
 }

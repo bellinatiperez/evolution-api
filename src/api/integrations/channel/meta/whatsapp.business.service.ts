@@ -1174,6 +1174,7 @@ export class BusinessStartupService extends ChannelStartupService {
         linkPreview: data?.linkPreview,
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
+        metadata: data?.metadata,
       },
       isIntegration,
     );
