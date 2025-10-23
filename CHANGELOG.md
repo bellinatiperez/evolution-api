@@ -1,3 +1,13 @@
+# 2.4.4 (2025-01-23)
+
+### Features
+
+* Add optional metadata field to SendTextWithGroupBalancingDto for enhanced message context
+* Implement metadata support in message persistence across all WhatsApp services (Baileys, Business, Evolution)
+* Add metadata field to Message table schema for PostgreSQL, MySQL, and PostgreSQL Bouncer
+* Update validation schemas to support optional metadata field
+* Enable flexible JSON metadata storage for campaign tracking, user context, and custom data
+
 # 2.4.3 (2025-01-23)
 
 ### Fixed
