@@ -1,3 +1,11 @@
+# 2.4.3 (2025-01-23)
+
+### Fixed
+
+* Resolve production database migration deployment issues
+* Fix P3009 migration error for group fields in Message table
+* Improve migration stability and deployment process
+
 # 2.4.2 (2025-01-23)
 
 ### Fixed
