@@ -1,3 +1,3 @@
 -- AlterTable
-ALTER TABLE "evolution_api"."Message" 
+ALTER TABLE "Message" 
 ADD COLUMN     "metadata" JSONB;
