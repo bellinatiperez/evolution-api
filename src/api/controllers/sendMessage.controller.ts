@@ -211,8 +211,11 @@ export class SendMessageController {
         mentioned: data.mentioned,
       };
 
-      // Enviar mensagem usando a instância selecionada
-      const result = await this.waMonitor.waInstances[selectedInstance].textMessage(sendData);
+      // Enviar mensagem usando a instância selecionada, incluindo informações do grupo
+      const result = await this.waMonitor.waInstances[selectedInstance].textMessage(sendData, false, {
+        alias: data.alias,
+        groupId: group.id,
+      });
 
       this.logger.info(`Mensagem enviada com sucesso via instância: ${selectedInstance} (grupo: ${data.alias})`);
 

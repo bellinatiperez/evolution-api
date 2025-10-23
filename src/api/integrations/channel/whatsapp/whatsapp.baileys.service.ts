@@ -2060,6 +2060,7 @@ export class BaileysStartupService extends ChannelStartupService {
     message: T,
     options?: Options,
     isIntegration = false,
+    groupInfo?: { alias?: string; groupId?: string },
   ) {
     const isWA = (await this.whatsappNumber({ numbers: [number] }))?.shift();
 
@@ -2170,6 +2171,14 @@ export class BaileysStartupService extends ChannelStartupService {
       }
 
       const messageRaw = this.prepareMessage(messageSent);
+
+      // Incluir informações do alias quando disponível
+      if (groupInfo?.alias) {
+        messageRaw.groupAlias = groupInfo.alias;
+      }
+      if (groupInfo?.groupId) {
+        messageRaw.groupId = groupInfo.groupId;
+      }
 
       const isMedia =
         messageSent?.message?.imageMessage ||
@@ -2368,7 +2377,7 @@ export class BaileysStartupService extends ChannelStartupService {
   }
 
   // Send Message Controller
-  public async textMessage(data: SendTextDto, isIntegration = false) {
+  public async textMessage(data: SendTextDto, isIntegration = false, groupInfo?: { alias?: string; groupId?: string }) {
     const text = data.text;
 
     if (!text || text.trim().length === 0) {
@@ -2387,6 +2396,7 @@ export class BaileysStartupService extends ChannelStartupService {
         mentioned: data?.mentioned,
       },
       isIntegration,
+      groupInfo,
     );
   }
 
