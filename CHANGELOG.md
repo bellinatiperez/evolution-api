@@ -1,3 +1,10 @@
+# 2.4.2 (2025-01-23)
+
+### Fixed
+
+* Resolve database migration issues and improve stability
+* Fix migration deployment errors for group fields in Message table
+
 # 2.4.1 (2025-01-23)
 
 ### Fixed
