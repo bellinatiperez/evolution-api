@@ -1,3 +1,11 @@
+# 2.4.0 (2025-01-23)
+
+### Features
+
+* Add groupAlias and groupId fields to Message table for better group message tracking and context
+* Implement database migration to support group information in message records
+* Enhance message persistence with group metadata for improved auditability and performance
+
 # 2.3.3 (2025-09-18)
 
 ### Features
