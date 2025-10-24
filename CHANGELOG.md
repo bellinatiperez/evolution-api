@@ -1,3 +1,11 @@
+# 2.4.5 (2025-01-23)
+
+### Maintenance
+
+* Update manager submodule to latest version (2.0.1)
+* Add instance signaling functionality to manager interface
+* Improve submodule synchronization and version management
+
 # 2.4.4 (2025-01-23)
 
 ### Features
