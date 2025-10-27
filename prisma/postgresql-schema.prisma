@@ -173,7 +173,6 @@ model Message {
   status                       String?         @db.VarChar(30)
   groupAlias                   String?         @db.VarChar(100)
   groupId                      String?         @db.VarChar(100)
-  metadata                     Json?           @db.JsonB
 
   sessionId String?
   session   IntegrationSession? @relation(fields: [sessionId], references: [id])

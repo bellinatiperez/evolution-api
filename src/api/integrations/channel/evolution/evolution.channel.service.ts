@@ -545,7 +545,6 @@ export class EvolutionStartupService extends ChannelStartupService {
         linkPreview: data?.linkPreview,
         mentionsEveryOne: data?.mentionsEveryOne,
         mentioned: data?.mentioned,
-        metadata: data?.metadata,
       },
       null,
       isIntegration,

@@ -126,7 +126,6 @@ export const sendTextWithGroupBalancingSchema: JSONSchema7 = {
       items: { type: 'string', pattern: '^\\d+' },
       uniqueItems: true,
     },
-    metadata: { type: 'object' },
   },
   required: ['alias', 'number', 'text'],
   ...isNotEmpty('alias', 'number', 'text'),

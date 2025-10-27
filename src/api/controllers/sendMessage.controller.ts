@@ -209,7 +209,6 @@ export class SendMessageController {
         linkPreview: data.linkPreview,
         mentionsEveryOne: data.mentionsEveryOne,
         mentioned: data.mentioned,
-        metadata: data.metadata,
       };
 
       // Enviar mensagem usando a instância selecionada, incluindo informações do grupo
